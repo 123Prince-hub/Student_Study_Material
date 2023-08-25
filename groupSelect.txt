@@ -1,0 +1,65 @@
+from functools import partial
+from itertools import groupby
+from operator import attrgetter
+
+from django.forms.models import ModelChoiceField, ModelChoiceIterator
+
+
+class GroupedModelChoiceIterator(ModelChoiceIterator):
+    def __init__(self, field, groupby):
+        self.groupby = groupby
+        super().__init__(field)
+
+    def __iter__(self):
+        if self.field.empty_label is not None:  
+            yield ("", self.field.empty_label)
+        queryset = self.queryset
+        # Can't use iterator() when queryset uses prefetch_related()
+        if not queryset._prefetch_related_lookups:
+            queryset = queryset.iterator()
+        for group, objs in groupby(queryset, self.groupby):
+            yield (group, [self.choice(obj) for obj in objs])
+
+class GroupedModelChoiceField(ModelChoiceField):
+    def __init__(self, *args, choices_groupby, **kwargs):
+        if isinstance(choices_groupby, str):
+            choices_groupby = attrgetter(choices_groupby)
+        elif not callable(choices_groupby):
+            raise TypeError('choices_groupby must either be a str or a callable accepting a single argument')
+        self.iterator = partial(GroupedModelChoiceIterator, groupby=choices_groupby)
+        super().__init__(*args, **kwargs)
+
+
+
+
+# self.fields['title'] = GroupedModelChoiceField(
+#     queryset=Title.objects.select_related('section')
+#     .filter(Q(section__label__isnull=False) & (Q(roles__icontains='field') | Q(roles__icontains='office'))).order_by('section__sort'),
+#     choices_groupby='section.label',
+#     empty_label="Select...",
+#     help_text='Only editable by the Payroll Department',
+#     widget=Select(attrs={'disabled': 'disabled'} if not req.has_role('admin, payroll') else {}),
+# )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class CustomSelect(Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, str(value), label, selected, index, subindex, attrs)
+        if value:
+            division_state = self.choices.queryset.get(pk=str(value))
+            option['attrs']['data-abbreviation'] = division_state.abbreviation
+        return option
